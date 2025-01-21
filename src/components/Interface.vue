@@ -60,6 +60,7 @@
 
 <script>
 import { initDuckDB, executeQuery } from "@/services/duckdbService";
+import { resetDuckDB } from "@/services/duckdbService"; // <-- NEW import
 import { format as formatSQL } from "sql-formatter";
 import Uploader from "./Uploader.vue";
 import Sidebar from "./Sidebar.vue";
@@ -122,15 +123,11 @@ export default {
       csvOptions: {
         delimiter: ",",
         header: true,
-
-        // Instead of on_error, use ignore_errors
-        // We'll interpret "fail", "ignore", "replace"
-        // behind the scenes as ignore_errors=FALSE/TRUE
-        onError: "fail",     // 'fail', 'ignore', or 'replace'
-        quote: "\"",         // default double-quote
-        escape: "\"",        // default double-quote
-        skip: 0,             // lines to skip from the top
-        comment: ""          // if non-empty, skip lines starting w/ that char
+        onError: "fail", // 'fail', 'ignore', or 'replace'
+        quote: "\"",
+        escape: "\"",
+        skip: 0,
+        comment: ""
       },
 
       // JSON parse
@@ -262,6 +259,15 @@ export default {
 
     /* MAIN LOGIC */
     async proceedToAnalysis(file) {
+      // IMPORTANT: Clear out the old DuckDB instance to free memory
+      try {
+        await resetDuckDB();
+        await initDuckDB();
+        this.dbInitialized = true;
+      } catch (err) {
+        console.error("Re-init DB error:", err);
+      }
+
       this.importError = null;
       this.currentFile = file;
       this.uploadTimestamp = Date.now();
@@ -310,32 +316,19 @@ export default {
         const delim = this.csvOptions.delimiter || ",";
         const header = this.csvOptions.header ? "true" : "false";
 
-        // Interpret the onError for ignore_errors
-        // 'fail' => ignore_errors=FALSE
-        // 'ignore' or 'replace' => ignore_errors=TRUE
+        // Interpret onError => ignore_errors
         let ignoreErrors = "FALSE";
-        if (
-          this.csvOptions.onError === "ignore" ||
-          this.csvOptions.onError === "replace"
-        ) {
+        if (this.csvOptions.onError === "ignore" || this.csvOptions.onError === "replace") {
           ignoreErrors = "TRUE";
         }
 
-        const quote =
-          this.csvOptions.quote !== undefined
-            ? this.csvOptions.quote
-            : "\"";
-        const escape =
-          this.csvOptions.escape !== undefined
-            ? this.csvOptions.escape
-            : "\"";
+        const quote = this.csvOptions.quote !== undefined ? this.csvOptions.quote : "\"";
+        const escape = this.csvOptions.escape !== undefined ? this.csvOptions.escape : "\"";
         const skip = this.csvOptions.skip || 0;
-        // If comment is empty, pass comment=NULL to disable
         const commentClause = this.csvOptions.comment
           ? `comment='${this.csvOptions.comment}'`
           : "comment=NULL";
 
-        // Use read_csv with ignore_errors
         sql = `
           CREATE OR REPLACE TABLE ${this.quotedTableName} AS
           SELECT * FROM read_csv(
@@ -381,12 +374,20 @@ export default {
     },
     async fetchFileMetadata() {
       try {
-        const rowCount = await executeQuery(
-          `SELECT COUNT(*) as ct FROM ${this.quotedTableName};`
-        );
-        if (rowCount.length > 0) {
-          this.fileRowCount = rowCount[0].ct;
+        // Skip full scan for Parquet to avoid OOM
+        if (this.fileExtension !== "parquet") {
+          const rowCount = await executeQuery(
+            `SELECT COUNT(*) as ct FROM ${this.quotedTableName};`
+          );
+          if (rowCount.length > 0) {
+            this.fileRowCount = rowCount[0].ct;
+          }
+        } else {
+          // For large Parquet, avoid COUNT(*)
+          this.fileRowCount = null;
         }
+
+        // Retrieve columns (still can be large for big Parquet, consider PRAGMA parquet_metadata if needed)
         const colRes = await executeQuery(
           `PRAGMA table_info(${this.quotedTableName});`
         );
@@ -436,7 +437,7 @@ export default {
             const rows = results.map((r) => Object.values(r));
             this.queryResults = [headers, ...rows];
           }
-          // Store the row count (number of objects returned)
+
           const rowCount = results.length;
 
           // Gather stats
@@ -452,10 +453,7 @@ export default {
               profilingData = JSON.parse(rawJson);
             }
           } catch (profErr) {
-            console.warn(
-              "Could not retrieve or parse profiling data:",
-              profErr
-            );
+            console.warn("Could not retrieve or parse profiling data:", profErr);
           }
 
           this.queryStats = {
@@ -506,7 +504,6 @@ export default {
       document.body.removeChild(link);
     },
 
-    // Utility
     formatFileSize(bytes) {
       if (bytes === 0) return "0 Bytes";
       const k = 1024;
