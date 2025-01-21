@@ -47,7 +47,6 @@
 
             <!-- Single row with file rows, result rows, and time -->
             <div class="flex items-center space-x-3">
-                <span>File Rows: {{ fileRowCount || 0 }}</span>
                 <span>Results: {{ queryStats.rowsReturned || 0 }}</span>
                 <span>Time: {{ (queryStats.durationMs / 1000).toFixed(3) }}s</span>
             </div>

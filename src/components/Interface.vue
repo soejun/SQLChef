@@ -59,8 +59,7 @@
 </template>
 
 <script>
-import { initDuckDB, executeQuery } from "@/services/duckdbService";
-import { resetDuckDB } from "@/services/duckdbService"; // <-- NEW import
+import { initDuckDB, executeQuery, resetDuckDB } from "@/services/duckdbService";
 import { format as formatSQL } from "sql-formatter";
 import Uploader from "./Uploader.vue";
 import Sidebar from "./Sidebar.vue";
@@ -71,21 +70,6 @@ function safeStringify(obj) {
   return JSON.stringify(obj, (key, value) =>
     typeof value === "bigint" ? value.toString() : value
   );
-}
-
-// Optional helper to parse total bytes scanned from the profiling JSON
-function extractBytesScanned(jsonProfile) {
-  if (!jsonProfile || !jsonProfile.result) return null;
-  let total = 0;
-  const pipelines = jsonProfile.result.pipelines || [];
-  for (const pipeline of pipelines) {
-    for (const op of pipeline.operators || []) {
-      if (op.info && op.info.bytes_read) {
-        total += op.info.bytes_read;
-      }
-    }
-  }
-  return total > 0 ? total : null;
 }
 
 export default {
@@ -141,7 +125,7 @@ export default {
       // Flag to indicate DB is ready
       dbInitialized: false,
 
-      // We'll store stats from the last query here (time, bytes scanned, etc.)
+      // We'll store stats from the last query here (time, rows returned, etc.)
       queryStats: null,
     };
   },
@@ -259,7 +243,7 @@ export default {
 
     /* MAIN LOGIC */
     async proceedToAnalysis(file) {
-      // IMPORTANT: Clear out the old DuckDB instance to free memory
+      // Clear out the old DuckDB instance to free memory
       try {
         await resetDuckDB();
         await initDuckDB();
@@ -387,7 +371,8 @@ export default {
           this.fileRowCount = null;
         }
 
-        // Retrieve columns (still can be large for big Parquet, consider PRAGMA parquet_metadata if needed)
+        // Retrieve columns
+        // (Note: for very large Parquet, you could skip or do PRAGMA parquet_metadata)
         const colRes = await executeQuery(
           `PRAGMA table_info(${this.quotedTableName});`
         );
@@ -425,9 +410,6 @@ export default {
       // Let Vue update the DOM before the query
       this.$nextTick(async () => {
         try {
-          // Enable JSON profiling
-          await executeQuery("PRAGMA enable_profiling='json'");
-
           // Run the user's query
           const results = await executeQuery(this.query);
           console.log("Query results:", results);
@@ -438,28 +420,14 @@ export default {
             this.queryResults = [headers, ...rows];
           }
 
-          const rowCount = results.length;
-
-          // Gather stats
+          // We'll just measure query duration + row count
           const endTime = performance.now();
           const durationMs = endTime - startTime;
+          const rowCount = results.length;
 
-          // Try to retrieve the profiling JSON
-          let profilingData = null;
-          try {
-            const profRows = await executeQuery("PRAGMA last_profiling_output");
-            if (profRows.length && profRows[0].profiling_output) {
-              const rawJson = profRows[0].profiling_output;
-              profilingData = JSON.parse(rawJson);
-            }
-          } catch (profErr) {
-            console.warn("Could not retrieve or parse profiling data:", profErr);
-          }
-
+          // Store minimal stats (no DuckDB profiling)
           this.queryStats = {
             durationMs,
-            profilingData,
-            bytesScanned: extractBytesScanned(profilingData),
             rowsReturned: rowCount,
           };
         } catch (err) {
