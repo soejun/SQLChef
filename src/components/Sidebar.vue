@@ -1,5 +1,4 @@
 <template>
-    <!-- Removed: style="resize: horizontal;" so the sidebar doesn't expand horizontally -->
     <aside class="hidden md:flex md:flex-col border-r border-gray-700 bg-gray-800 p-4 h-full"
         style="overflow: auto; min-width: 250px; max-width: 320px">
         <!-- Scrollable Content -->
@@ -47,7 +46,7 @@
             </div> -->
         </div>
 
-        <!-- Footer: re-upload section -->
+        <!-- Footer: parse/re-upload section -->
         <div class="mt-6">
             <!-- Parse Options Section -->
             <div>
@@ -60,16 +59,87 @@
 
                 <!-- CSV Options -->
                 <div v-if="['csv', 'txt', 'tsv'].includes(fileExtension)" class="mb-4">
-                    <label class="block mb-1 text-sm">
-                        <h2 class="text-lg font-semibold">Delimiter</h2>
+                    <h2 class="text-lg font-semibold">CSV Options</h2>
+
+                    <!-- Basic Options -->
+                    <label class="block mb-1 text-sm mt-2">
+                        Delimiter:
                         <input type="text" v-model="csvOptions.delimiter"
                             class="w-full mt-1 p-2 bg-gray-700 border border-gray-600 rounded-md"
-                            placeholder="e.g. comma, tab, etc." />
+                            placeholder="e.g. , or \t" />
                     </label>
+
                     <label class="flex items-center mt-2 text-sm">
                         <input type="checkbox" v-model="csvOptions.header" class="mr-2" />
                         Has Header
                     </label>
+
+                    <!-- Toggle for advanced -->
+                    <span
+                        class="mt-3 text-gray-200 text-sm flex items-center cursor-pointer hover:text-gray-400 transition-colors"
+                        @click="showAdvancedCsv = !showAdvancedCsv" role="button" tabindex="0"
+                        @keydown.enter="showAdvancedCsv = !showAdvancedCsv">
+                        <!-- Arrow Icon -->
+                        <span class="inline-block transform transition-transform duration-200"
+                            :class="showAdvancedCsv ? 'rotate-90' : 'rotate-0'">
+                            &#9654; <!-- ▶ -->
+                        </span>
+                        <!-- Advanced Text -->
+                        <span class="ml-2">Advanced</span>
+                    </span>
+
+                    <!-- Advanced Options (hidden by default) -->
+                    <transition name="fade">
+                        <div v-if="showAdvancedCsv" class="mt-3 space-y-3 text-sm">
+                            <!-- onError -->
+                            <label class="block">
+                                On Parse Error:
+                                <select v-model="csvOptions.onError"
+                                    class="w-full mt-1 p-2 bg-gray-700 border border-gray-600 rounded-md">
+                                    <option value="fail">Fail</option>
+                                    <option value="ignore">Ignore</option>
+                                    <option value="replace">Replace</option>
+                                </select>
+                                <p class="text-xs text-gray-400 mt-1">
+                                    "Ignore" or "Replace" will skip invalid rows (i.e.
+                                    <code>ignore_errors=TRUE</code>)
+                                </p>
+                            </label>
+
+                            <!-- quote -->
+                            <label class="block">
+                                Quote Character:
+                                <input type="text" v-model="csvOptions.quote"
+                                    class="w-full mt-1 p-2 bg-gray-700 border border-gray-600 rounded-md"
+                                    placeholder='e.g. " or ' />
+                            </label>
+
+                            <!-- escape -->
+                            <label class="block">
+                                Escape Character:
+                                <input type="text" v-model="csvOptions.escape"
+                                    class="w-full mt-1 p-2 bg-gray-700 border border-gray-600 rounded-md"
+                                    placeholder='e.g. " or \' />
+                            </label>
+
+                            <!-- skip -->
+                            <label class="block">
+                                Skip Lines:
+                                <input type="number" v-model.number="csvOptions.skip"
+                                    class="w-full mt-1 p-2 bg-gray-700 border border-gray-600 rounded-md" min="0" />
+                            </label>
+
+                            <!-- comment -->
+                            <label class="block">
+                                Comment Char:
+                                <input type="text" v-model="csvOptions.comment"
+                                    class="w-full mt-1 p-2 bg-gray-700 border border-gray-600 rounded-md"
+                                    placeholder="#" />
+                            </label>
+                        </div>
+                    </transition>
+
+                    <!-- Re-Parse Button -->
                     <button class="mt-3 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-md w-full"
                         @click="$emit('recreate-table')">
                         Re-Parse
@@ -138,6 +208,7 @@ export default {
     data() {
         return {
             fileUrl: "",
+            showAdvancedCsv: false, // Toggle advanced CSV options
         };
     },
     methods: {
