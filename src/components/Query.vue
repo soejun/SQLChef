@@ -1,9 +1,10 @@
 <template>
     <div class="p-4 bg-gray-900 flex flex-col relative">
         <!-- Query textarea -->
-        <textarea v-model="localQuery"
-            class="w-full h-36 p-2 bg-gray-800 border border-gray-700 rounded-md text-sm font-mono resize-y"
-            placeholder="Write your SQL query here..." @keydown.enter.prevent="onKeyDown"></textarea>
+        <textarea v-model="localQuery" ref="textarea" rows="6"
+            class="w-full p-2 bg-gray-800 border border-gray-700 rounded-md text-sm font-mono resize-none"
+            placeholder="Write your SQL query here..." @keydown.enter.prevent="onKeyDown"
+            @input="autoResize"></textarea>
 
         <!-- Buttons -->
         <div class="mt-3 flex items-center space-x-2">
@@ -20,7 +21,7 @@
 
             <button
                 class="flex items-center space-x-1 px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-md transition-colors"
-                @click="$emit('format-query')" title="Format Query">
+                @click="beautifySQL" title="Format Query">
                 <!-- Format icon -->
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
                     stroke="currentColor" stroke-width="2">
@@ -38,14 +39,15 @@
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
             </svg>
-            <span class="text-green-400 font-bold">Running query, please wait...</span>
+            <span class="text-green-400 font-bold">
+                Running query, please wait...
+            </span>
         </div>
 
         <!-- Bottom-right: Show query stats if we have them -->
         <div v-if="queryStats"
             class="absolute bottom-4 right-2 text-gray-400 text-xs bg-gray-800 bg-opacity-60 p-2 rounded shadow-md">
-
-            <!-- Single row with file rows, result rows, and time -->
+            <!-- Single row with result rows and time -->
             <div class="flex items-center space-x-3">
                 <span>Results: {{ queryStats.rowsReturned || 0 }}</span>
                 <span>Time: {{ (queryStats.durationMs / 1000).toFixed(3) }}s</span>
@@ -60,6 +62,8 @@
 </template>
 
 <script>
+import { format as formatSQL } from "sql-formatter";
+
 export default {
     name: "Query",
     props: {
@@ -75,7 +79,7 @@ export default {
             type: Object,
             default: null,
         },
-        // Added: pass in total file row count from Interface
+        // If you want to show total file row count somewhere (optional)
         fileRowCount: {
             type: Number,
             default: 0,
@@ -87,19 +91,25 @@ export default {
         };
     },
     watch: {
+        // Keep localQuery and parent query in sync
         query(newQuery) {
             if (newQuery !== this.localQuery) {
                 this.localQuery = newQuery;
+                this.$nextTick(this.autoResize);
             }
         },
         localQuery(newVal) {
             this.$emit("update:query", newVal);
         },
     },
+    mounted() {
+        // Auto-resize initially if there's existing text
+        this.autoResize();
+    },
     methods: {
         onKeyDown(event) {
             if (event.shiftKey) {
-                // Insert newline
+                // Insert newline on Shift+Enter
                 const ta = event.target;
                 const start = ta.selectionStart;
                 const end = ta.selectionEnd;
@@ -109,16 +119,42 @@ export default {
                     this.localQuery.slice(end);
                 this.$nextTick(() => {
                     ta.selectionStart = ta.selectionEnd = start + 1;
+                    this.autoResize();
                 });
             } else {
                 // Run the query on normal Enter
                 this.$emit("run-query");
             }
         },
+
+        /**
+         * Automatically expands the <textarea> as its content changes.
+         */
+        autoResize() {
+            const ta = this.$refs.textarea;
+            if (!ta) return;
+
+            ta.style.height = "auto";
+            ta.style.height = ta.scrollHeight + "px";
+        },
+
+        beautifySQL() {
+            try {
+                this.localQuery = formatSQL(this.localQuery, {
+                    language: "sql",
+                    keywordCase: 'upper',
+                });
+                // Re-run autoResize after formatting
+                this.$nextTick(this.autoResize);
+            } catch (err) {
+                console.warn("SQL Beautify failed:", err);
+            }
+        },
+
         formatBytes(bytes) {
             if (!bytes || isNaN(bytes)) return "0 B";
             const units = ["B", "KB", "MB", "GB", "TB"];
-            let i = Math.floor(Math.log(bytes) / Math.log(1024));
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
             return (bytes / Math.pow(1024, i)).toFixed(2) + " " + units[i];
         },
     },
@@ -126,5 +162,7 @@ export default {
 </script>
 
 <style scoped>
-/* Add any styles if needed */
+textarea {
+    overflow-y: hidden;
+}
 </style>

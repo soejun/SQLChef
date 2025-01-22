@@ -238,6 +238,7 @@ export default {
             // Simple default query for newly loaded files
             // (We rely on the query results to infer columns.)
             this.query = `SELECT * FROM ${this.quotedTableName} LIMIT 10;`;
+            this.beautifySQL();            
 
             try {
                 await this.createTableInDuckDB(file, ext);
