@@ -6,19 +6,47 @@
             <!-- Columns Section -->
             <div>
                 <h2 class="text-lg font-semibold mb-3">Columns</h2>
-                <div class="overflow-y-auto max-h-128">
-                    <!-- table-fixed + ellipsis columns -->
+
+                <!-- Spinner if file is currently loading -->
+                <div v-if="isLoadingFile" class="mb-4 flex items-center space-x-2">
+                    <svg class="animate-spin h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    <span class="text-green-400 font-bold">
+                        Loading columns...
+                    </span>
+                </div>
+
+                <!-- Table of columns if not loading -->
+                <div v-else class="overflow-y-auto max-h-128">
                     <table class="w-full text-sm rounded-md shadow-inner table-fixed">
                         <tbody>
-                            <tr v-for="col in fileColumns" :key="col.column_name"
+                            <tr v-for="(col, index) in localColumns" :key="index"
                                 class="hover:bg-gray-800 transition-colors duration-200">
                                 <td
-                                    class="p-3 border-b border-gray-600 overflow-hidden text-ellipsis whitespace-nowrap">
-                                    {{ col.column_name }}
-                                </td>
-                                <td
-                                    class="p-3 border-b border-gray-600 overflow-hidden text-ellipsis whitespace-nowrap">
-                                    {{ col.column_type }}
+                                    class="p-2 border-b border-gray-600 flex items-center justify-between text-gray-200">
+                                    <!-- If editing? Show input. Otherwise show text -->
+                                    <div v-if="col.isEditing" class="flex-1">
+                                        <input v-model="col.editValue" type="text"
+                                            class="bg-gray-900 border border-gray-700 rounded p-1 w-full"
+                                            @keyup.enter="finishEdit(index)" @blur="finishEdit(index)" />
+                                    </div>
+                                    <div v-else class="flex-1 truncate">
+                                        {{ col.column_name }}
+                                    </div>
+
+                                    <!-- Pencil icon if not editing, else no icon -->
+                                    <span v-if="!col.isEditing"
+                                        class="text-gray-400 hover:text-gray-200 p-1 ml-1 transition"
+                                        @click="startEdit(index)" title="Rename Column">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                            stroke-width="1.5" stroke="currentColor" class="size-4">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                        </svg>
+                                    </span>
                                 </td>
                             </tr>
                         </tbody>
@@ -26,24 +54,30 @@
                 </div>
             </div>
 
-            <!-- File Details Section -->
-            <!-- <div>
+            <!-- File Details Section (optional, commented out) -->
+            <!--
+            <div>
                 <h2 class="text-lg font-semibold mb-3">File Details</h2>
                 <ul class="space-y-1 text-sm text-gray-200">
                     <li>
-                        <span class="font-semibold text-gray-300">Name:</span> {{ currentFile.name }}
+                        <span class="font-semibold text-gray-300">Name:</span>
+                        {{ currentFile.name }}
                     </li>
                     <li>
-                        <span class="font-semibold text-gray-300">Size:</span> {{ formatFileSize(currentFile.size) }}
+                        <span class="font-semibold text-gray-300">Size:</span>
+                        {{ formatFileSize(currentFile.size) }}
                     </li>
                     <li>
-                        <span class="font-semibold text-gray-300">Rows:</span> {{ fileRowCount }}
+                        <span class="font-semibold text-gray-300">Rows:</span>
+                        {{ fileRowCount }}
                     </li>
                     <li>
-                        <span class="font-semibold text-gray-300">Extension:</span> {{ fileExtension }}
+                        <span class="font-semibold text-gray-300">Extension:</span>
+                        {{ fileExtension }}
                     </li>
                 </ul>
-            </div> -->
+            </div>
+            -->
         </div>
 
         <!-- Footer: parse/re-upload section -->
@@ -84,7 +118,6 @@
                             :class="showAdvancedCsv ? 'rotate-90' : 'rotate-0'">
                             &#9654; <!-- ▶ -->
                         </span>
-                        <!-- Advanced Text -->
                         <span class="ml-2">Advanced</span>
                     </span>
 
@@ -101,7 +134,8 @@
                                     <option value="replace">Replace</option>
                                 </select>
                                 <p class="text-xs text-gray-400 mt-1">
-                                    "Ignore" or "Replace" will skip invalid rows (i.e.
+                                    "Ignore" or "Replace" will skip invalid
+                                    rows (
                                     <code>ignore_errors=TRUE</code>)
                                 </p>
                             </label>
@@ -141,7 +175,7 @@
 
                     <!-- Re-Parse Button -->
                     <button class="mt-3 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-md w-full"
-                        @click="$emit('recreate-table')">
+                        @click="$emit(' recreate-table')">
                         Re-Parse
                     </button>
                 </div>
@@ -154,7 +188,9 @@
                         <select v-model="jsonOptions.format"
                             class="w-full mt-1 p-2 bg-gray-700 border border-gray-600 rounded-md">
                             <option value="auto">Auto (read_json_auto)</option>
-                            <option value="ndjson">NDJSON (read_ndjson)</option>
+                            <option value="ndjson">
+                                NDJSON (read_ndjson)
+                            </option>
                         </select>
                     </label>
                     <button class="mt-3 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-md w-full"
@@ -204,12 +240,30 @@ export default {
         csvOptions: { type: Object, required: true },
         jsonOptions: { type: Object, required: true },
         importError: { type: String, default: null },
+        isLoadingFile: { type: Boolean, default: false }, // Show/hide the "Loading columns..." spinner
     },
     data() {
         return {
             fileUrl: "",
             showAdvancedCsv: false, // Toggle advanced CSV options
+
+            // We'll copy the parent's fileColumns into a local array
+            // so we can store "isEditing" + "editValue" per column
+            localColumns: [],
         };
+    },
+    watch: {
+        // When fileColumns change, rebuild localColumns
+        fileColumns: {
+            immediate: true,
+            handler(newCols) {
+                this.localColumns = newCols.map((c) => ({
+                    ...c,
+                    isEditing: false,
+                    editValue: c.column_name,
+                }));
+            },
+        },
     },
     methods: {
         formatFileSize(bytes) {
@@ -286,6 +340,27 @@ export default {
                 alert("Error loading file from URL:\n" + error.message);
             }
         },
+
+        // Start editing a column
+        startEdit(index) {
+            this.localColumns.forEach((c) => (c.isEditing = false));
+            this.localColumns[index].isEditing = true;
+        },
+
+        // Called when user presses Enter or leaves the field
+        finishEdit(index) {
+            const col = this.localColumns[index];
+            if (!col.isEditing) return;
+
+            col.isEditing = false;
+            const oldName = col.column_name;
+            const newName = col.editValue.trim();
+            if (!newName || newName === oldName) {
+                col.editValue = oldName;
+                return;
+            }
+            this.$emit("rename-column", { oldName, newName });
+        },
     },
 };
 </script>
@@ -300,5 +375,9 @@ th {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+input {
+    outline: none;
 }
 </style>

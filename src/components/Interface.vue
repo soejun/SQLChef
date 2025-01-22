@@ -12,7 +12,8 @@
             <Sidebar v-if="currentFile" :currentFile="currentFile" :fileExtension="fileExtension"
                 :uploadDate="uploadDate" :fileRowCount="fileRowCount" :fileColumns="fileColumns"
                 :csvOptions="csvOptions" :jsonOptions="jsonOptions" :importError="importError"
-                @recreate-table="recreateTable" @file-selected="handleFileSelect" />
+                :isLoadingFile="isLoadingFile" @recreate-table="recreateTable" @file-selected="handleFileSelect"
+                @rename-column="handleColumnRename" />
 
             <!-- MAIN: Query Editor + Results -->
             <div class="flex-1 flex flex-col overflow-hidden">
@@ -20,7 +21,8 @@
                     @update:query="updateQuery" @run-query="runQuery" @format-query="beautifySQL"
                     @insert-newline="insertNewline" />
 
-                <Results :queryResults="queryResults" :isLoading="isLoading" @download-results="downloadResults" />
+                <Results :queryResults="queryResults" :isLoading="isLoading" :isLoadingFile="isLoadingFile"
+                    @download-results="downloadResults" />
             </div>
         </div>
 
@@ -74,7 +76,8 @@ export default {
             fileRowCount: null,     // We'll store # of rows returned from the last query
             fileColumns: [],        // We'll store columns from the last query's headers
 
-            isLoading: false,
+            isLoading: false,       // True while a query is running
+            isLoadingFile: false,   // True while a file is being loaded (or re-parsed)
             importError: null,
 
             // CSV parse
@@ -136,7 +139,7 @@ export default {
             this.importError = "Failed to initialize the database.";
         }
 
-        // Restore last query results if we have them
+        // Restore last query/results from localStorage
         const savedResults = localStorage.getItem("sqlchef-last-results");
         if (savedResults) {
             try {
@@ -215,7 +218,13 @@ export default {
          * On new file: 1) reset DB, 2) create table, 3) run default query
          */
         async proceedToAnalysis(file) {
-            // Clear out the old DuckDB instance to free memory
+            // Show "loading file" spinner
+            this.isLoadingFile = true;
+            // Clear out old columns/rows
+            this.fileColumns = [];
+            this.fileRowCount = null;
+
+            // Reset DB to free memory
             try {
                 await resetDuckDB();
                 await initDuckDB();
@@ -235,23 +244,24 @@ export default {
             this.tableName = baseName;
             this.quotedTableName = `"${baseName.replace(/"/g, '""')}"`;
 
-            // Simple default query for newly loaded files
-            // (We rely on the query results to infer columns.)
+            // Simple default query
             this.query = `SELECT * FROM ${this.quotedTableName} LIMIT 10;`;
-            this.beautifySQL();            
+            this.beautifySQL();
 
             try {
                 await this.createTableInDuckDB(file, ext);
-                // We'll run the default query to infer columns from the result
                 await this.runQuery();
             } catch (err) {
                 console.error("Error loading file:", err);
                 this.importError = err.message || String(err);
+            } finally {
+                this.isLoadingFile = false;
             }
         },
         async recreateTable() {
             if (!this.currentFile) return;
             this.importError = null;
+            this.isLoadingFile = true;
             try {
                 await this.createTableInDuckDB(this.currentFile, this.fileExtension);
                 // Re-run the default query
@@ -259,6 +269,8 @@ export default {
             } catch (err) {
                 console.error("Error re-parsing file:", err);
                 this.importError = err.message || String(err);
+            } finally {
+                this.isLoadingFile = false;
             }
         },
         async createTableInDuckDB(file, ext) {
@@ -274,7 +286,6 @@ export default {
                 const delim = this.csvOptions.delimiter || ",";
                 const header = this.csvOptions.header ? "true" : "false";
 
-                // Interpret onError => ignore_errors
                 let ignoreErrors = "FALSE";
                 if (this.csvOptions.onError === "ignore" || this.csvOptions.onError === "replace") {
                     ignoreErrors = "TRUE";
@@ -288,42 +299,41 @@ export default {
                     : "comment=NULL";
 
                 sql = `
-          CREATE OR REPLACE TABLE ${this.quotedTableName} AS
-          SELECT * FROM read_csv(
-            '${virtualPath}',
-            delim='${delim}',
-            header=${header},
-            quote='${quote}',
-            escape='${escape}',
-            skip=${skip},
-            ${commentClause},
-            ignore_errors=${ignoreErrors}
-          );
-        `;
+                    CREATE OR REPLACE TABLE ${this.quotedTableName} AS
+                    SELECT * FROM read_csv(
+                        '${virtualPath}',
+                        delim='${delim}',
+                        header=${header},
+                        quote='${quote}',
+                        escape='${escape}',
+                        skip=${skip},
+                        ${commentClause},
+                        ignore_errors=${ignoreErrors}
+                    );
+                `;
             } else if (ext === "json" || ext === "ndjson") {
-                // Decide whether to use read_ndjson or read_json_auto
                 if (ext === "ndjson" || this.jsonOptions.format === "ndjson") {
                     sql = `
-            CREATE OR REPLACE TABLE ${this.quotedTableName} AS
-            SELECT * FROM read_ndjson('${virtualPath}');
-          `;
+                        CREATE OR REPLACE TABLE ${this.quotedTableName} AS
+                        SELECT * FROM read_ndjson('${virtualPath}');
+                    `;
                 } else {
                     sql = `
-            CREATE OR REPLACE TABLE ${this.quotedTableName} AS
-            SELECT * FROM read_json_auto('${virtualPath}');
-          `;
+                        CREATE OR REPLACE TABLE ${this.quotedTableName} AS
+                        SELECT * FROM read_json_auto('${virtualPath}');
+                    `;
                 }
             } else if (ext === "parquet") {
                 sql = `
-          CREATE OR REPLACE TABLE ${this.quotedTableName} AS
-          SELECT * FROM read_parquet('${virtualPath}');
-        `;
+                    CREATE OR REPLACE TABLE ${this.quotedTableName} AS
+                    SELECT * FROM read_parquet('${virtualPath}');
+                `;
             } else {
                 // fallback => read_csv_auto
                 sql = `
-          CREATE OR REPLACE TABLE ${this.quotedTableName} AS
-          SELECT * FROM read_csv_auto('${virtualPath}');
-        `;
+                    CREATE OR REPLACE TABLE ${this.quotedTableName} AS
+                    SELECT * FROM read_csv_auto('${virtualPath}');
+                `;
             }
 
             if (sql) {
@@ -335,13 +345,10 @@ export default {
          * Run the current query, storing columns from the result.
          */
         async runQuery() {
-            // Prevent running queries if DB isn't ready
             if (!this.dbInitialized) {
-                alert("Database is still initializing. Please wait a moment.");
+                alert("Database is still initializing. Please wait.");
                 return;
             }
-
-            // If a query is already running, skip
             if (this.isLoading) {
                 console.warn("runQuery() called while already loading. Skipping.");
                 return;
@@ -353,38 +360,28 @@ export default {
             this.queryStats = null; // reset stats each run
 
             const startTime = performance.now();
-
-            // Let Vue update the DOM before the query
             this.$nextTick(async () => {
                 try {
-                    // Run the user's query
                     const results = await executeQuery(this.query);
-                    console.log("Query results:", results);
-
-                    // Convert the array of objects to a 2D array: [headers, rowValues...]
+                    // Convert array-of-objects => [headers, rows...]
                     if (results.length) {
                         const headers = Object.keys(results[0]);
                         const rows = results.map((row) => Object.values(row));
                         this.queryResults = [headers, ...rows];
 
-                        // Infer columns from the first row's keys
+                        // Overwrite fileColumns with these column names
                         this.fileColumns = headers.map((colName) => ({
                             column_name: colName,
-                            column_type: "N/A", // We aren't inferring actual types here
                         }));
                     } else {
                         this.queryResults = [];
                         this.fileColumns = [];
                     }
-
-                    // We can store how many rows were returned
                     const rowCount = results.length;
-
-                    // Record time & row count (no DuckDB profiling)
                     const endTime = performance.now();
                     const durationMs = endTime - startTime;
 
-                    this.fileRowCount = rowCount; // # of rows from the last query
+                    this.fileRowCount = rowCount;
                     this.queryStats = {
                         durationMs,
                         rowsReturned: rowCount,
@@ -427,6 +424,29 @@ export default {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        },
+
+        /**
+         * Handle rename from Sidebar, receiving { oldName, newName }.
+         *  => run ALTER TABLE ... RENAME COLUMN
+         *  => re-run the same query to refresh results & columns
+         */
+        async handleColumnRename({ oldName, newName }) {
+            if (!newName || !oldName) return;
+            if (newName.trim() === "" || newName === oldName) return;
+
+            try {
+                await executeQuery(`
+                    ALTER TABLE ${this.quotedTableName}
+                    RENAME COLUMN "${oldName.replace(/"/g, '""')}"
+                    TO "${newName.replace(/"/g, '""')}";
+                `);
+                // Re-run the query to show updated column names
+                await this.runQuery();
+            } catch (err) {
+                console.error("Error renaming column:", err);
+                alert("Error renaming column: " + err.message);
+            }
         },
     },
 };
