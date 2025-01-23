@@ -79,7 +79,6 @@ export default {
             type: Object,
             default: null,
         },
-        // If you want to show total file row count somewhere (optional)
         fileRowCount: {
             type: Number,
             default: 0,
@@ -108,22 +107,25 @@ export default {
     },
     methods: {
         onKeyDown(event) {
-            if (event.shiftKey) {
-                // Insert newline on Shift+Enter
+            // Check shift/cmd/ctrl key for run query
+            const isRunHotkey = event.shiftKey || event.metaKey || event.ctrlKey;
+            if (isRunHotkey) {
+                // shift/cmd/ctrl + Enter => Run query
+                this.$emit("run-query");
+            } else {
+                // Normal Enter => Newline
                 const ta = event.target;
                 const start = ta.selectionStart;
                 const end = ta.selectionEnd;
+
                 this.localQuery =
-                    this.localQuery.slice(0, start) +
-                    "\n" +
-                    this.localQuery.slice(end);
+                    this.localQuery.slice(0, start) + "\n" + this.localQuery.slice(end);
+
+                // Re-position the cursor + auto-resize
                 this.$nextTick(() => {
                     ta.selectionStart = ta.selectionEnd = start + 1;
                     this.autoResize();
                 });
-            } else {
-                // Run the query on normal Enter
-                this.$emit("run-query");
             }
         },
 
@@ -133,7 +135,6 @@ export default {
         autoResize() {
             const ta = this.$refs.textarea;
             if (!ta) return;
-
             ta.style.height = "auto";
             ta.style.height = ta.scrollHeight + "px";
         },
@@ -142,7 +143,7 @@ export default {
             try {
                 this.localQuery = formatSQL(this.localQuery, {
                     language: "sql",
-                    keywordCase: 'upper',
+                    keywordCase: "upper",
                 });
                 // Re-run autoResize after formatting
                 this.$nextTick(this.autoResize);
