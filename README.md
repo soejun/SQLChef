@@ -1,13 +1,13 @@
-<h3 style="margin: 0; display: flex; align-items: center; justify-content: center;">
+<p align="center">
   <picture>
     <!-- Dark mode logo -->
     <source media="(prefers-color-scheme: dark)" srcset="public/sqlchef-dark.svg">
     <!-- Light mode logo -->
     <source media="(prefers-color-scheme: light)" srcset="public/sqlchef-light.svg">
     <!-- Fallback -->
-    <img src="public/1.svg" alt="SQLChef logo" style="width: 200px; height: auto;">
+    <img src="public/1.svg" alt="SQLChef logo" width="200">
   </picture>
-</h3>
+</p>
 
 **SQLChef** is a powerful, web-based SQL query tool that allows you to effortlessly analyze and manipulate your data. With support for various structured file formats and an intuitive interface, SQLChef makes data querying accessible and efficient for developers, data analysts, and enthusiasts alike.
 
