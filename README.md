@@ -1,4 +1,4 @@
-<h3 style="margin: 0; display: flex; align-items: center;">
+<h3 style="margin: 0; display: flex; align-items: center; justify-content: center;">
   <picture>
     <!-- Dark mode logo -->
     <source media="(prefers-color-scheme: dark)" srcset="public/sqlchef-dark.svg">
