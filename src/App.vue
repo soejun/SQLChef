@@ -1,11 +1,11 @@
 <template>
   <div id="app">
-    <header class="app-header flex items-center justify-between px-4 py-2 bg-gray-800">
+    <header class="app-header flex items-center justify-between px-4 py-1.5 bg-gray-800">
       <div class="flex items-center">
         <!-- Link to basePath in data -->
-        <a :href="basePath" class="flex items-center space-x-2 text-gray-200">
-          <img src="/sqlchef.svg" alt="SQL Chef Logo" class="h-8 w-8 mr-2" />
-          <h1 class="text-xl font-semibold">SQLChef</h1>
+        <a :href="basePath" class="flex items-center text-gray-200">
+          <!-- Increased height and width, removed right margin -->
+          <img src="/sqlchef-dark.svg" alt="SQL Chef Logo" class="h-10 w-40 -ml-2" />
         </a>
       </div>
 
